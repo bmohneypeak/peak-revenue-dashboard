@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peak Nano — Revenue Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* ── CONFIG ─────────────────────────────────────────────── */
+  :root {
+    --bg:        #0f1117;
+    --surface:   #181c26;
+    --border:    rgba(255,255,255,0.07);
+    --border-hi: rgba(255,255,255,0.14);
+    --text:      #e8eaf0;
+    --muted:     #6b7080;
+    --accent:    #4f9cf9;
+    --green:     #34d399;
+    --red:       #f87171;
+    --font-ui:   'DM Sans', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+    --radius:    10px;
+    --radius-lg: 16px;
+  }
+
+  /* ── RESET ──────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-ui); min-height: 100vh; }
+  button { font-family: var(--font-ui); cursor: pointer; }
+  select { font-family: var(--font-ui); }
+
+  /* ── PASSWORD GATE ──────────────────────────────────────── */
+  #gate {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; flex-direction: column; gap: 0;
+  }
+  .gate-box {
+    background: var(--surface); border: 1px solid var(--border-hi);
+    border-radius: var(--radius-lg); padding: 2.5rem 2.5rem 2rem;
+    width: 360px; display: flex; flex-direction: column; gap: 1.25rem;
+  }
+  .gate-logo { font-family: var(--font-mono); font-size: 11px; color: var(--accent); letter-spacing: .12em; text-transform: uppercase; }
+  .gate-title { font-size: 1.35rem; font-weight: 500; line-height: 1.3; }
+  .gate-sub { font-size: .85rem; color: var(--muted); }
+  .gate-input {
+    background: var(--bg); border: 1px solid var(--border-hi); border-radius: var(--radius);
+    padding: .7rem 1rem; color: var(--text); font-size: .95rem; font-family: var(--font-mono);
+    outline: none; transition: border-color .2s; width: 100%;
+  }
+  .gate-input:focus { border-color: var(--accent); }
+  .gate-btn {
+    background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
+    padding: .75rem 1rem; font-size: .95rem; font-weight: 500;
+    transition: opacity .15s, transform .1s;
+  }
+  .gate-btn:hover { opacity: .88; }
+  .gate-btn:active { transform: scale(.98); }
+  .gate-error { font-size: .82rem; color: var(--red); min-height: 1.1rem; }
+
+  /* ── APP ────────────────────────────────────────────────── */
+  #app { display: none; max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* header */
+  .hdr { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
+  .hdr-left { display: flex; flex-direction: column; gap: .35rem; }
+  .hdr-tag { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .14em; text-transform: uppercase; }
+  .hdr-title { font-size: 1.6rem; font-weight: 400; letter-spacing: -.02em; }
+  .hdr-right { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .status { display: flex; align-items: center; gap: .4rem; font-size: .78rem; color: var(--muted); font-family: var(--font-mono); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* filter bar */
+  .filter-bar {
+    display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: .75rem 1rem; margin-bottom: 1.5rem;
+  }
+  .filter-label { font-size: .75rem; color: var(--muted); font-family: var(--font-mono); }
+  .filter-select {
+    background: var(--bg); border: 1px solid var(--border-hi); border-radius: 6px;
+    color: var(--text); padding: .35rem .65rem; font-size: .82rem; outline: none;
+    transition: border-color .2s;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+  .filter-divider { width: 1px; height: 20px; background: var(--border-hi); margin: 0 .25rem; }
+  .btn-sm {
+    background: transparent; border: 1px solid var(--border-hi); border-radius: 6px;
+    color: var(--muted); padding: .35rem .75rem; font-size: .78rem;
+    transition: color .15s, border-color .15s;
+  }
+  .btn-sm:hover { color: var(--text); border-color: var(--accent); }
+
+  /* loading */
+  #loading {
+    display: flex; align-items: center; justify-content: center;
+    height: 300px; font-family: var(--font-mono); font-size: .85rem; color: var(--muted);
+    gap: .75rem; flex-direction: column;
+  }
+  .spinner {
+    width: 28px; height: 28px; border: 2px solid var(--border-hi);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* metrics */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; margin-bottom: 1.5rem; }
+  .metric {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.1rem 1.25rem;
+    display: flex; flex-direction: column; gap: .3rem;
+  }
+  .metric-label { font-size: .7rem; color: var(--muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .08em; }
+  .metric-value { font-size: 1.55rem; font-weight: 300; letter-spacing: -.03em; }
+  .metric-sub { font-size: .72rem; color: var(--muted); font-family: var(--font-mono); }
+  .metric-value.green { color: var(--green); }
+  .metric-value.accent { color: var(--accent); }
+
+  /* chart grid */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  .chart-grid .full { grid-column: 1/-1; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 1.25rem;
+  }
+  .card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: .5rem; }
+  .card-title { font-size: .82rem; font-weight: 500; color: var(--text); letter-spacing: .01em; }
+  .tabs { display: flex; gap: .3rem; }
+  .tab {
+    background: transparent; border: 1px solid var(--border-hi); border-radius: 6px;
+    color: var(--muted); padding: .28rem .65rem; font-size: .72rem; transition: all .15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .legend { display: flex; flex-wrap: wrap; gap: .6rem .9rem; margin-bottom: .75rem; }
+  .li { display: flex; align-items: center; gap: .35rem; font-size: .75rem; color: var(--muted); cursor: pointer; transition: color .15s; }
+  .li:hover { color: var(--text); }
+  .li.faded { opacity: .28; }
+  .ldot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap.h280 { height: 280px; }
+  .chart-wrap.h220 { height: 220px; }
+
+  /* section divider */
+  .section { margin-top: 2rem; }
+  .section-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: .75rem; }
+  .section-title { font-size: .9rem; font-weight: 500; }
+  .section-controls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+
+  /* table */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  thead th {
+    text-align: left; padding: .55rem .75rem; font-size: .68rem; font-weight: 500;
+    color: var(--muted); font-family: var(--font-mono); text-transform: uppercase;
+    letter-spacing: .07em; border-bottom: 1px solid var(--border-hi); cursor: pointer;
+    white-space: nowrap; user-select: none;
+  }
+  thead th:hover { color: var(--text); }
+  tbody td { padding: .55rem .75rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  tbody tr:hover td { background: rgba(255,255,255,.025); }
+  tbody tr:last-child td { border-bottom: none; }
+  .rank { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; font-size: .7rem; font-weight: 500; font-family: var(--font-mono); background: rgba(255,255,255,.06); color: var(--muted); }
+  .rank.g1 { background: rgba(251,191,36,.15); color: #fbbf24; }
+  .rank.g2 { background: rgba(148,163,184,.15); color: #94a3b8; }
+  .rank.g3 { background: rgba(180,83,9,.18); color: #d97706; }
+  .type-pill { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; }
+  .type-dot { width: 7px; height: 7px; border-radius: 2px; }
+  .bar-bg { display: inline-block; vertical-align: middle; height: 4px; border-radius: 2px; margin-left: .5rem; opacity: .5; }
+  .text-right { text-align: right; }
+  .text-muted { color: var(--muted); }
+
+  /* error */
+  .error-msg { background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); border-radius: var(--radius); padding: 1rem 1.25rem; font-size: .85rem; color: var(--red); margin-bottom: 1rem; }
+
+  @media (max-width: 640px) {
+    .chart-grid { grid-template-columns: 1fr; }
+    .chart-grid .full { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     PASSWORD GATE
+════════════════════════════════════════════════════════════ -->
+<div id="gate">
+  <div class="gate-box">
+    <span class="gate-logo">Peak Nano · Internal</span>
+    <h1 class="gate-title">Revenue Dashboard</h1>
+    <p class="gate-sub">Enter your access password to continue.</p>
+    <input id="pw-input" class="gate-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')checkPw()">
+    <button class="gate-btn" onclick="checkPw()">Access Dashboard</button>
+    <span class="gate-error" id="pw-error"></span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN APP
+════════════════════════════════════════════════════════════ -->
+<div id="app">
+  <div id="loading"><div class="spinner"></div><span>Fetching live data from Airtable…</span></div>
+  <div id="error-banner" class="error-msg" style="display:none"></div>
+  <div id="content" style="display:none">
+
+    <div class="hdr">
+      <div class="hdr-left">
+        <span class="hdr-tag">Peak Nano · Revenue Intelligence</span>
+        <h1 class="hdr-title">2026 – 2030 Forecast</h1>
+      </div>
+      <div class="hdr-right">
+        <div class="status"><span class="status-dot"></span><span id="last-updated">—</span></div>
+        <button class="btn-sm" onclick="loadData()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <span class="filter-label">Year</span>
+      <select class="filter-select" id="f-year" onchange="applyFilters()">
+        <option value="all">All years</option>
+        <option>2026</option><option>2027</option><option>2028</option>
+        <option>2029</option><option>2030</option>
+      </select>
+      <span class="filter-divider"></span>
+      <span class="filter-label">Type</span>
+      <select class="filter-select" id="f-type" onchange="applyFilters()"></select>
+      <span class="filter-divider"></span>
+      <button class="btn-sm" onclick="resetFilters()">Reset filters</button>
+    </div>
+
+    <div class="metrics" id="metrics"></div>
+
+    <div class="chart-grid">
+      <div class="card full">
+        <div class="card-hdr">
+          <span class="card-title">Revenue over time</span>
+          <div class="tabs">
+            <button class="tab active" onclick="setMode('stacked',this)">Stacked area</button>
+            <button class="tab" onclick="setMode('bar',this)">Grouped bar</button>
+            <button class="tab" onclick="setMode('line',this)">Line</button>
+          </div>
+        </div>
+        <div class="legend" id="legend-main"></div>
+        <div class="chart-wrap h280"><canvas id="mainChart" role="img" aria-label="Revenue by type 2026–2030"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr"><span class="card-title">Type mix</span><span class="text-muted" style="font-size:.75rem;font-family:var(--font-mono)" id="pie-year-label">2030</span></div>
+        <div class="chart-wrap h220"><canvas id="pieChart" role="img" aria-label="Revenue share by type"></canvas></div>
+        <div class="legend" id="legend-pie" style="margin-top:.75rem"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr"><span class="card-title">Year-over-year growth</span></div>
+        <div class="chart-wrap h220"><canvas id="growthChart" role="img" aria-label="Year over year growth"></canvas></div>
+      </div>
+    </div>
+
+    <!-- TOP 20 CUSTOMERS -->
+    <div class="section">
+      <div class="section-hdr">
+        <span class="section-title">Top 20 customers by revenue</span>
+        <div class="section-controls">
+          <span class="filter-label">Year</span>
+          <select class="filter-select" id="cust-year" onchange="renderCustomers()">
+            <option>2026</option><option>2027</option><option>2028</option>
+            <option>2029</option><option>2030</option>
+          </select>
+          <span class="filter-label">Type</span>
+          <select class="filter-select" id="cust-type" onchange="renderCustomers()">
+            <option value="all">All types</option>
+          </select>
+        </div>
+      </div>
+      <div class="card tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th onclick="sortCust('name')">Customer <span id="cs-name"></span></th>
+              <th onclick="sortCust('type')">Type <span id="cs-type"></span></th>
+              <th onclick="sortCust('revenue')" class="text-right">Revenue <span id="cs-revenue">↓</span></th>
+              <th>Share</th>
+            </tr>
+          </thead>
+          <tbody id="cust-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DETAIL TABLE -->
+    <div class="section">
+      <div class="section-hdr"><span class="section-title">Revenue detail — all types &amp; years</span></div>
+      <div class="card tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortDT('type')">Type <span id="dt-type"></span></th>
+              <th onclick="sortDT('year')">Year <span id="dt-year">↓</span></th>
+              <th onclick="sortDT('revenue')" class="text-right">Revenue <span id="dt-revenue"></span></th>
+              <th>Share of year</th>
+            </tr>
+          </thead>
+          <tbody id="dt-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIGURATION — edit these two values before deploying
+// ═══════════════════════════════════════════════════════════
+const AIRTABLE_TOKEN = 'patExXawr72Vf7tEB.1c0d041efe1ded6fea1ed6048678e3a324b63954f5197102f39b66bcf02bfa49';
+const BASE_ID        = 'appLEq4rQeK7IRcZ6';
+const DASHBOARD_PW   = '2026peAk1sgreAt!';
+
+// Table IDs (from your base)
+const TABLE_CHART    = 'tblnhFx0PLNbc3j6Q';  // Chart Data
+const TABLE_ANNUAL   = 'tblWDfFYq0i9CRtjw';  // Annual Rev by Customer+SKU
+
+// ═══════════════════════════════════════════════════════════
+//  PASSWORD GATE
+// ═══════════════════════════════════════════════════════════
+function checkPw() {
+  const val = document.getElementById('pw-input').value;
+  if (val === DASHBOARD_PW) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display  = 'block';
+    loadData();
+  } else {
+    document.getElementById('pw-error').textContent = 'Incorrect password. Try again.';
+    document.getElementById('pw-input').value = '';
+    document.getElementById('pw-input').focus();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════
+const YEARS  = [2026,2027,2028,2029,2030];
+const TYPES  = ['HDC','FAAS','LDF','Grants/Research','OAAS','BOPP'];
+const COLORS = {HDC:'#4f9cf9',FAAS:'#34d399',LDF:'#f59e0b','Grants/Research':'#a78bfa',OAAS:'#f97316',BOPP:'#6b7080'};
+const YEAR_FIELDS = {
+  2026:'fldxwWjPbPDPC5un1', 2027:'fldlw2h3wUYBAw8Ez',
+  2028:'fldbKSyN7BM11r4iI', 2029:'fld9QQ8mywByQDluB', 2030:'fldJNYi69jENCDOg0'
+};
+
+let CHART_DATA = [];   // [{type, year, revenue}]
+let CUST_DATA  = [];   // [{name, type, 2026..2030}]
+let hiddenTypes = new Set();
+let chartMode   = 'stacked';
+let custSortKey = 'revenue', custSortDir = 1;
+let dtSortKey   = 'year',    dtSortDir   = 1;
+let mainInst, pieInst, growthInst;
+
+// ═══════════════════════════════════════════════════════════
+//  AIRTABLE FETCH — paginated
+// ═══════════════════════════════════════════════════════════
+async function fetchAll(tableId, fields) {
+  const headers = { Authorization: `Bearer ${AIRTABLE_TOKEN}` };
+  let records = [], offset = null;
+  const fieldParams = fields.map(f => `fields[]=${encodeURIComponent(f)}`).join('&');
+  do {
+    const url = `https://api.airtable.com/v0/${BASE_ID}/${tableId}?${fieldParams}&pageSize=100${offset ? '&offset='+offset : ''}`;
+    const res  = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Airtable API error ${res.status}: ${await res.text()}`);
+    const json = await res.json();
+    records.push(...json.records);
+    offset = json.offset || null;
+  } while (offset);
+  return records;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LOAD + PROCESS DATA
+// ═══════════════════════════════════════════════════════════
+async function loadData() {
+  document.getElementById('loading').style.display  = 'flex';
+  document.getElementById('content').style.display  = 'none';
+  document.getElementById('error-banner').style.display = 'none';
+  try {
+    // 1. Chart Data table — Type, Year, Revenue
+    const chartRecs = await fetchAll(TABLE_CHART, ['Type','Year','Revenue']);
+    CHART_DATA = chartRecs
+      .map(r => ({ type: r.fields.Type, year: r.fields.Year, revenue: r.fields.Revenue || 0 }))
+      .filter(d => YEARS.includes(d.year));
+
+    // 2. Annual Rev by Customer+SKU — for Top 20 customers
+    const annualRecs = await fetchAll(TABLE_ANNUAL, ['Customer','Type','2026','2027','2028','2029','2030']);
+    const custMap = {};
+    annualRecs.forEach(r => {
+      const f   = r.fields;
+      const name = f.Customer || '(unknown)';
+      // Type is a lookup — may be array of objects or strings
+      let type = '';
+      if (Array.isArray(f.Type)) {
+        type = typeof f.Type[0] === 'object' ? (f.Type[0].name || '') : f.Type[0];
+      } else if (typeof f.Type === 'string') {
+        type = f.Type;
+      }
+      const key = name + '||' + type;
+      if (!custMap[key]) custMap[key] = { name, type, 2026:0, 2027:0, 2028:0, 2029:0, 2030:0 };
+      YEARS.forEach(y => { custMap[key][y] += (f[String(y)] || 0); });
+    });
+    CUST_DATA = Object.values(custMap);
+
+    // populate type dropdowns
+    const allTypes = [...new Set(CHART_DATA.map(d => d.type))].sort();
+    ['f-type','cust-type'].forEach(id => {
+      const sel = document.getElementById(id);
+      const existing = id === 'cust-type' ? '<option value="all">All types</option>' : '<option value="all">All types</option>';
+      sel.innerHTML = existing;
+      allTypes.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t; o.textContent = t; sel.appendChild(o);
+      });
+    });
+
+    document.getElementById('last-updated').textContent =
+      'Live · ' + new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    renderAll();
+    renderCustomers();
+
+  } catch(err) {
+    document.getElementById('loading').style.display = 'none';
+    const eb = document.getElementById('error-banner');
+    eb.textContent = 'Error loading data: ' + err.message + '. Check your token and try refreshing.';
+    eb.style.display = 'block';
+    document.getElementById('content').style.display = 'block';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+function fmt(v) {
+  if (!v) return '$0';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + Math.round(v/1e3) + 'K';
+  return '$' + Math.round(v).toLocaleString();
+}
+
+function getFiltered() {
+  const yr = document.getElementById('f-year').value;
+  const tp = document.getElementById('f-type').value;
+  return CHART_DATA.filter(d =>
+    (yr === 'all' || d.year == yr) &&
+    (tp === 'all' || d.type === tp) &&
+    !hiddenTypes.has(d.type)
+  );
+}
+
+function applyFilters() { renderAll(); }
+function resetFilters() {
+  document.getElementById('f-year').value = 'all';
+  document.getElementById('f-type').value = 'all';
+  hiddenTypes = new Set();
+  renderAll();
+}
+function setMode(m, btn) {
+  chartMode = m;
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  buildMain();
+}
+function toggleType(t) {
+  hiddenTypes.has(t) ? hiddenTypes.delete(t) : hiddenTypes.add(t);
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER ALL
+// ═══════════════════════════════════════════════════════════
+function renderAll() {
+  renderMetrics();
+  buildMain();
+  buildPie();
+  buildGrowth();
+  updateLegends();
+  renderDT();
+}
+
+function renderMetrics() {
+  const filtered = getFiltered();
+  const total = filtered.reduce((s,d) => s + d.revenue, 0);
+  const yr = document.getElementById('f-year').value;
+  const yTots = YEARS.map(y => CHART_DATA.filter(d => d.year===y && !hiddenTypes.has(d.type)).reduce((s,d)=>s+d.revenue,0));
+  const peakY = YEARS[yTots.indexOf(Math.max(...yTots))];
+  const topT  = TYPES.map(t => ({t, v: CHART_DATA.filter(d=>d.type===t&&!hiddenTypes.has(d.type)).reduce((s,d)=>s+d.revenue,0)})).sort((a,b)=>b.v-a.v)[0];
+  const growths = YEARS.slice(1).map((y,i) => yTots[i]>0 ? (yTots[i+1]-yTots[i])/yTots[i]*100 : null).filter(v=>v!==null);
+  const avgG = growths.length ? Math.round(growths.reduce((a,b)=>a+b,0)/growths.length) : 0;
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">${yr==='all'?'5-year total':yr+' total'}</div><div class="metric-value accent">${fmt(total)}</div><div class="metric-sub">${yr==='all'?'2026–2030':yr}</div></div>
+    <div class="metric"><div class="metric-label">Peak year</div><div class="metric-value">${peakY}</div><div class="metric-sub">${fmt(Math.max(...yTots))}</div></div>
+    <div class="metric"><div class="metric-label">Top type</div><div class="metric-value" style="font-size:1.2rem">${topT?.t||'—'}</div><div class="metric-sub">${fmt(topT?.v||0)}</div></div>
+    <div class="metric"><div class="metric-label">Avg YoY growth</div><div class="metric-value ${avgG>=0?'green':''}">${avgG}%</div><div class="metric-sub">2026–2030</div></div>
+  `;
+}
+
+function buildMain() {
+  if (mainInst) mainInst.destroy();
+  const visT = TYPES.filter(t => !hiddenTypes.has(t));
+  const datasets = visT.map(t => {
+    const data = YEARS.map(y => { const d = CHART_DATA.find(r=>r.type===t&&r.year===y); return d?d.revenue:0; });
+    return { label:t, data, backgroundColor:COLORS[t]+'88', borderColor:COLORS[t], borderWidth:chartMode==='line'?2:1, pointRadius:chartMode==='line'?3:0, fill:chartMode==='stacked' };
+  });
+  mainInst = new Chart(document.getElementById('mainChart'), {
+    type: chartMode==='bar'?'bar':'line',
+    data: { labels: YEARS.map(String), datasets },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)}} },
+      scales:{
+        x:{ stacked:chartMode==='stacked', grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#6b7080'} },
+        y:{ stacked:chartMode==='stacked', grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#6b7080',callback:v=>fmt(v)} }
+      }
+    }
+  });
+}
+
+function buildPie() {
+  if (pieInst) pieInst.destroy();
+  const yr = document.getElementById('f-year').value;
+  const useY = yr==='all' ? 2030 : parseInt(yr);
+  document.getElementById('pie-year-label').textContent = useY;
+  const visT = TYPES.filter(t => !hiddenTypes.has(t));
+  const data  = visT.map(t => { const d = CHART_DATA.find(r=>r.type===t&&r.year===useY); return d?d.revenue:0; });
+  const total = data.reduce((a,b)=>a+b,0);
+  pieInst = new Chart(document.getElementById('pieChart'), {
+    type:'doughnut',
+    data:{ labels:visT, datasets:[{data, backgroundColor:visT.map(t=>COLORS[t]), borderWidth:0}] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', plugins:{legend:{display:false}, tooltip:{callbacks:{label:ctx=>ctx.label+': '+fmt(ctx.raw)+' ('+Math.round(ctx.raw/total*100)+'%)'}}} }
+  });
+  document.getElementById('legend-pie').innerHTML = visT.map((t,i) => {
+    const pct = total>0 ? Math.round(data[i]/total*100) : 0;
+    return `<span class="li" onclick="toggleType('${t}')"><span class="ldot" style="background:${COLORS[t]}"></span>${t} ${pct}%</span>`;
+  }).join('');
+}
+
+function buildGrowth() {
+  if (growthInst) growthInst.destroy();
+  const tots  = YEARS.map(y => CHART_DATA.filter(d=>!hiddenTypes.has(d.type)&&d.year===y).reduce((s,d)=>s+d.revenue,0));
+  const gData = YEARS.slice(1).map((y,i) => tots[i]>0 ? Math.round((tots[i+1]-tots[i])/tots[i]*100) : null);
+  const cols  = gData.map(v => v===null?'#6b708066':v>=0?'#34d39988':'#f8717188');
+  growthInst = new Chart(document.getElementById('growthChart'), {
+    type:'bar',
+    data:{ labels:YEARS.slice(1).map(String), datasets:[{label:'YoY %',data:gData,backgroundColor:cols,borderRadius:5}] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>(ctx.raw??0)+'%'}}}, scales:{x:{grid:{display:false},ticks:{color:'#6b7080'}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#6b7080',callback:v=>v+'%'}}} }
+  });
+}
+
+function updateLegends() {
+  document.getElementById('legend-main').innerHTML = TYPES.map(t =>
+    `<span class="li${hiddenTypes.has(t)?' faded':''}" onclick="toggleType('${t}')"><span class="ldot" style="background:${COLORS[t]}"></span>${t}</span>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CUSTOMERS TABLE
+// ═══════════════════════════════════════════════════════════
+function renderCustomers() {
+  const yr = parseInt(document.getElementById('cust-year').value);
+  const tp = document.getElementById('cust-type').value;
+  let rows = CUST_DATA
+    .filter(c => tp==='all' || c.type===tp)
+    .map(c => ({ name:c.name, type:c.type, revenue:c[yr]||0 }))
+    .filter(c => c.revenue > 0)
+    .sort((a,b) => (a[custSortKey]<b[custSortKey]?-1:a[custSortKey]>b[custSortKey]?1:0) * custSortDir)
+    .slice(0,20);
+
+  const yearTotal = CHART_DATA.filter(d=>d.year===yr).reduce((s,d)=>s+d.revenue,0);
+  const maxRev    = rows.length>0 ? rows[0].revenue : 1;
+
+  if (custSortKey === 'revenue') rows.sort((a,b) => (b.revenue - a.revenue) * custSortDir);
+
+  document.getElementById('cust-body').innerHTML = rows.length === 0
+    ? '<tr><td colspan="5" style="color:var(--muted);padding:1.5rem .75rem">No revenue data for this selection.</td></tr>'
+    : rows.map((r,i) => {
+        const pct  = yearTotal>0 ? Math.round(r.revenue/yearTotal*100) : 0;
+        const barW = Math.round(r.revenue/maxRev*80);
+        const cls  = i===0?'g1':i===1?'g2':i===2?'g3':'';
+        return `<tr>
+          <td><span class="rank ${cls}">${i+1}</span></td>
+          <td>${r.name}</td>
+          <td><span class="type-pill"><span class="type-dot" style="background:${COLORS[r.type]||'#888'}"></span>${r.type}</span></td>
+          <td class="text-right">${fmt(r.revenue)}<span class="bar-bg" style="width:${barW}px;background:${COLORS[r.type]||'#888'}"></span></td>
+          <td class="text-muted">${pct}%</td>
+        </tr>`;
+      }).join('');
+
+  ['cs-name','cs-type','cs-revenue'].forEach(id => {
+    const key = id.replace('cs-','');
+    document.getElementById(id).textContent = custSortKey===key ? (custSortDir===1?'↓':'↑') : '';
+  });
+}
+
+function sortCust(key) {
+  custSortKey===key ? custSortDir*=-1 : (custSortKey=key, custSortDir=1);
+  renderCustomers();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DETAIL TABLE
+// ═══════════════════════════════════════════════════════════
+function renderDT() {
+  const yr = document.getElementById('f-year').value;
+  const tp = document.getElementById('f-type').value;
+  let rows = CHART_DATA.filter(d =>
+    (yr==='all'||d.year==yr) && (tp==='all'||d.type===tp) &&
+    !hiddenTypes.has(d.type) && d.revenue>0
+  );
+  const maxRev = Math.max(...rows.map(r=>r.revenue),1);
+  rows.sort((a,b)=>(a[dtSortKey]<b[dtSortKey]?-1:a[dtSortKey]>b[dtSortKey]?1:0)*dtSortDir);
+  const yTots = {};
+  YEARS.forEach(y=>{ yTots[y]=CHART_DATA.filter(d=>d.year===y&&!hiddenTypes.has(d.type)).reduce((s,d)=>s+d.revenue,0); });
+  document.getElementById('dt-body').innerHTML = rows.map(d => {
+    const pct = yTots[d.year]>0 ? Math.round(d.revenue/yTots[d.year]*100) : 0;
+    const bw  = Math.round(d.revenue/maxRev*60);
+    return `<tr>
+      <td><span class="type-pill"><span class="type-dot" style="background:${COLORS[d.type]}"></span>${d.type}</span></td>
+      <td>${d.year}</td>
+      <td class="text-right">${fmt(d.revenue)}<span class="bar-bg" style="width:${bw}px;background:${COLORS[d.type]}"></span></td>
+      <td class="text-muted">${pct}%</td>
+    </tr>`;
+  }).join('');
+  ['dt-type','dt-year','dt-revenue'].forEach(id=>{
+    const k=id.replace('dt-','');
+    document.getElementById(id).textContent=dtSortKey===k?(dtSortDir===1?'↓':'↑'):'';
+  });
+}
+
+function sortDT(key) {
+  dtSortKey===key ? dtSortDir*=-1 : (dtSortKey=key, dtSortDir=1);
+  renderDT();
+}
+</script>
+</body>
+</html>
