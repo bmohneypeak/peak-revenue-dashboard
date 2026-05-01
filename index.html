@@ -44,7 +44,7 @@ body {
   min-height: 100vh;
 }
 
-/* ──  GATE ── */
+/* ── PASSWORD GATE ── */
 #gate {
   position: fixed; inset: 0; z-index: 9999;
   background: var(--peak-gradient-dark);
@@ -332,15 +332,15 @@ footer {
 </head>
 <body>
 
-<!--  GATE -->
+<!-- PASSWORD GATE -->
 <div id="gate">
   <div class="gate-card">
     <img src="https://www.peaknano.com/hubfs/Logos/peak-nano-logo.svg" alt="Peak Nano" onerror="this.style.display='none'">
     <h2>Revenue Forecast Dashboard</h2>
-    <p>Enter your access  to continue.</p>
-    <input type="" id="pw-input" placeholder="" onkeydown="if(event.key==='Enter')checkPw()">
+    <p>Enter your access password to continue.</p>
+    <input type="password" id="pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkPw()">
     <button onclick="checkPw()">Access Dashboard</button>
-    <div id="gate-error">Incorrect . Please try again.</div>
+    <div id="gate-error">Incorrect password. Please try again.</div>
   </div>
 </div>
 
@@ -450,9 +450,13 @@ footer {
 // ══════════════════════════════════════════
 //  CONFIG — replace these before deploying
 // ══════════════════════════════════════════
-const AIRTABLE_TOKEN = 'patExXawr72Vf7tEB.1c0d041efe1ded6fea1ed6048678e3a324b63954f5197102f39b66bcf02bfa49';
+const AIRTABLE_TOKEN = 'YOUR_AIRTABLE_TOKEN_HERE';
 const BASE_ID        = 'appLEq4rQeK7IRcZ6';
-const DASHBOARD_PW   = '2026peAk1sgreAt!';
+const DASHBOARD_PW   = 'YOUR_PASSWORD_HERE';
+
+// Table IDs (confirmed from base)
+const TABLE_CHART    = 'tblnhFx0PLNbc3j6Q';  // Chart Data  — fields: Type, Year, Revenue
+const TABLE_ANNUAL   = 'tblWDfFYq0i9CRtjw';  // Annual Rev by Customer+SKU — fields: Customer, Type (lookup), SKU / Part #, 2026…2032 (rollups)
 
 // ══════════════════════════════════════════
 //  CONSTANTS
@@ -544,43 +548,74 @@ async function loadData() {
   const loader = document.getElementById('loader');
   loader.style.display = 'flex';
   try {
-    // Fetch revenue table — tblWDfFYq0i9CRtjw
-    const raw = await fetchTable('tblWDfFYq0i9CRtjw', [
-      'Customer Name','Product Type','Industry',
-      '2026 Revenue','2027 Revenue','2028 Revenue',
-      '2029 Revenue','2030 Revenue','2031 Revenue','2032 Revenue'
-    ]);
-    allRecords = raw.map(r => {
+    // ── 1. Fetch Chart Data table (Type, Year, Revenue) for stacked area totals
+    const chartRaw = await fetchTable(TABLE_CHART, ['Type','Year','Revenue']);
+
+    // Build chartByTypeYear: { 'HDC': {2026: x, ...}, ... }
+    const chartByTypeYear = {};
+    for (const r of chartRaw) {
       const f = r.fields || {};
-      const rawType = f['Product Type'] || '';
-      const type = TYPE_MAP[rawType] || rawType || 'Other';
-      const industry = classifyIndustry(f['Customer Name'], f['Industry']);
+      const rawType = f['Type'] || '';
+      const type = TYPE_MAP[rawType] || rawType;
+      const year = parseInt(f['Year']) || 0;
+      const rev  = parseFloat(f['Revenue']) || 0;
+      if (!type || !year) continue;
+      if (!chartByTypeYear[type]) chartByTypeYear[type] = {};
+      chartByTypeYear[type][year] = (chartByTypeYear[type][year] || 0) + rev;
+    }
+
+    // ── 2. Fetch Annual Rev by Customer+SKU table for customer table
+    // Year rollup fields are named '2026', '2027', ... '2032'
+    // Type is a lookup field — comes back as an array of strings
+    // Customer is plain text; SKU / Part # is plain text
+    const annualRaw = await fetchTable(TABLE_ANNUAL, [
+      'Customer', 'Type', 'SKU / Part #',
+      '2026','2027','2028','2029','2030','2031','2032'
+    ]);
+
+    allRecords = annualRaw.map(r => {
+      const f = r.fields || {};
+      // Type is a lookup → array like ["HDC"] or could be plain string in some configs
+      let rawType = '';
+      if (Array.isArray(f['Type'])) rawType = f['Type'][0] || '';
+      else rawType = f['Type'] || '';
+      const type = TYPE_MAP[rawType] || rawType || 'Unknown';
+      const name = f['Customer'] || 'Unknown';
+      const industry = classifyIndustry(name, '');
       return {
-        name:     f['Customer Name'] || 'Unknown',
+        name,
         type,
         industry,
         rev: {
-          2026: parseFloat(f['2026 Revenue'])||0,
-          2027: parseFloat(f['2027 Revenue'])||0,
-          2028: parseFloat(f['2028 Revenue'])||0,
-          2029: parseFloat(f['2029 Revenue'])||0,
-          2030: parseFloat(f['2030 Revenue'])||0,
-          2031: parseFloat(f['2031 Revenue'])||0,
-          2032: parseFloat(f['2032 Revenue'])||0
+          2026: parseFloat(f['2026']) || 0,
+          2027: parseFloat(f['2027']) || 0,
+          2028: parseFloat(f['2028']) || 0,
+          2029: parseFloat(f['2029']) || 0,
+          2030: parseFloat(f['2030']) || 0,
+          2031: parseFloat(f['2031']) || 0,
+          2032: parseFloat(f['2032']) || 0
         }
       };
-    }).filter(r => Object.values(r.rev).some(v=>v>0));
+    }).filter(r => Object.values(r.rev).some(v => v > 0));
 
-    document.getElementById('live-status').innerHTML = `<span id="live-dot"></span>Live &middot; ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
-    document.getElementById('footer-date').textContent = new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
+    // ── 3. Overlay chart totals into allRecords for the stacked area chart
+    // We use chartByTypeYear as the authoritative source for product-line totals
+    // so the stacked area matches what the Chart Data table shows.
+    // allRecords drives the customer table and industry breakdowns.
+    window._chartByTypeYear = chartByTypeYear;
+
+    document.getElementById('live-status').innerHTML =
+      `<span id="live-dot"></span>Live &middot; ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+    document.getElementById('footer-date').textContent =
+      new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
 
     loader.style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     render();
   } catch(e) {
-    console.error(e);
+    console.error('loadData error:', e);
     loader.style.display = 'none';
-    alert('Failed to load data. Check your Airtable token and network connection.');
+    alert('Failed to load data. Check console for details (F12 → Console).');
   }
 }
 
@@ -706,21 +741,34 @@ function renderSummary(years) {
 
 // ── STACKED AREA CHART ──
 function renderStakeChart(years) {
+  // Prefer Chart Data table values (window._chartByTypeYear) when available
+  // as they are the authoritative aggregated totals.
+  // Fall back to summing allRecords if not available.
+  const chartData = window._chartByTypeYear || {};
   const byProduct = aggregateByProductYear(years);
+
   const labels = years.map(String);
   const datasets = PRODUCT_ORDER
     .filter(p => !hiddenProducts.has(p))
-    .map(p => ({
-      label: p,
-      data: years.map(yr => byProduct[p][yr] || 0),
-      backgroundColor: PRODUCT_COLORS[p] + 'cc',
-      borderColor: PRODUCT_COLORS[p],
-      borderWidth: 1.5,
-      fill: true,
-      tension: 0.35,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-    }));
+    .map(p => {
+      const data = years.map(yr => {
+        // Use Chart Data table if it has this product+year
+        if (chartData[p] && chartData[p][yr] != null) return chartData[p][yr];
+        // Fall back to allRecords aggregation
+        return (byProduct[p] && byProduct[p][yr]) || 0;
+      });
+      return {
+        label: p,
+        data,
+        backgroundColor: PRODUCT_COLORS[p] + 'cc',
+        borderColor: PRODUCT_COLORS[p],
+        borderWidth: 1.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+      };
+    });
 
   // Legend
   const legEl = document.getElementById('stake-legend');
